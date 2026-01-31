@@ -1,0 +1,50 @@
+{
+  "name": "service-auth-core",
+  "version": "0.1.1",
+  "description": "Service-agnostic, pluggable auth core (authn + authz) with roleVersion freshness and token provider abstraction.",
+  "keywords": [
+    "auth",
+    "authentication",
+    "authorization",
+    "jwt",
+    "rbac",
+    "microservices"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build:examples": "tsup examples/**/*.ts --format esm --outDir dist-examples --clean=false",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "jose": "^6.1.3"
+  }
+}
