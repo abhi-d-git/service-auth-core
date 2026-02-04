@@ -4,6 +4,7 @@ import type {
   RoleProvider,
   RoleStampProvider,
   RoleVersionProvider,
+  AdditionalClaimsProvider,
 } from "./adapters/types.js";
 import type { TokenPayload, TokenProvider } from "./token/types.js";
 
@@ -24,6 +25,7 @@ export type AuthCoreAdapters = {
   roleProvider: RoleProvider;
   roleStampProvider?: RoleStampProvider; // new
   roleVersionProvider?: RoleVersionProvider; // keep
+  additionalClaimsProvider?: AdditionalClaimsProvider;
   tokenProvider: TokenProvider;
 };
 
@@ -41,6 +43,7 @@ export type AuthenticateResult =
       roles: string[];
       roleStamp?: string;
       roleVersion?: number;
+      adx?: any;
     }
   | {
       ok: false;

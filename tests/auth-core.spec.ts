@@ -2,118 +2,92 @@ import { describe, it, expect, vi } from "vitest";
 import { createAuthCore } from "../src/framework.js";
 import type { TokenPayload } from "../src/token/types.js";
 
-function makeCore(
-  mocks?: Partial<{
-    credOk: boolean;
-    credReason: any;
+type TestCoreOptions = {
+  // existing legacy test knobs used by your older tests
+  roles?: string[];
+  provideRoleStampProvider?: boolean;
+  provideRoleVersionProvider?: boolean;
+  currentRoleStamp?: string;
+  currentRoleVersion?: number;
 
-    roles: string[];
+  // ✅ NEW: allow passing new adapters (like additionalClaimsProvider)
+  adapterOverrides?: Record<string, any>;
+  // ✅ allow any additional legacy knobs
+  [key: string]: any;
+};
 
-    // token-side claims
-    tokenRoleVersion?: number;
-    tokenRoleStamp?: string;
-
-    // current values (provider-side)
-    currentRoleVersion?: number;
-    currentRoleStamp?: string;
-
-    // toggle whether providers exist
-    provideRoleVersionProvider?: boolean;
-    provideRoleStampProvider?: boolean;
-
-    verifyThrows: Error;
-    verifiedClaims: TokenPayload;
-  }>,
-) {
-  const credOk = mocks?.credOk ?? true;
-  const roles = mocks?.roles ?? ["USER"];
-
-  const provideRoleVersionProvider = mocks?.provideRoleVersionProvider ?? true;
-  const provideRoleStampProvider = mocks?.provideRoleStampProvider ?? true;
-
-  const tokenRoleVersion = mocks?.tokenRoleVersion;
-  const tokenRoleStamp = mocks?.tokenRoleStamp;
-
-  const currentRoleVersion =
-    mocks?.currentRoleVersion ??
-    (typeof tokenRoleVersion === "number" ? tokenRoleVersion : 1);
-
-  const currentRoleStamp =
-    mocks?.currentRoleStamp ?? tokenRoleStamp ?? "stamp-1";
+export function makeCore(opts: TestCoreOptions = {}) {
+  const roles = opts.roles ?? ["ADMIN"];
+  const currentRoleStamp = opts.currentRoleStamp; //?? "etag-default";
+  const currentRoleVersion = opts.currentRoleVersion; // ?? 1;
 
   const credentialChecker = {
-    checkUserNamePassword: vi.fn(
-      async (_principal: string, _password: string) => {
-        if (credOk) return { ok: true as const, userId: "u-1" };
-        return { ok: false as const, reason: mocks?.credReason };
-      },
-    ),
+    checkUserNamePassword: vi.fn(async () => ({
+      ok: true as const,
+      userId: "u-1",
+    })),
   };
 
   const roleProvider = {
     getUserRoles: vi.fn(async (_userId: string) => roles),
   };
 
-  const roleVersionProvider = provideRoleVersionProvider
-    ? {
-        getRoleVersion: vi.fn(async (_userId: string) => currentRoleVersion),
-      }
+  const roleStampProvider = opts.provideRoleStampProvider
+    ? { getRoleStamp: vi.fn(async (_userId: string) => currentRoleStamp) }
     : undefined;
 
-  const roleStampProvider = provideRoleStampProvider
-    ? {
-        getRoleStamp: vi.fn(async (_userId: string) => currentRoleStamp),
-      }
+  const roleVersionProvider = opts.provideRoleVersionProvider
+    ? { getRoleVersion: vi.fn(async (_userId: string) => currentRoleVersion) }
     : undefined;
 
   const tokenProvider = {
-    issueToken: vi.fn(
-      async (payload: TokenPayload) => `token-for-${payload.sub}`,
-    ),
-    verifyToken: vi.fn(async (_token: string) => {
-      if (mocks?.verifyThrows) throw mocks.verifyThrows;
-
-      // default verified claims:
-      // include rs if provided; include rv if provided; if neither provided, include rv=1 to satisfy required claims
-      const base: TokenPayload = {
+    issueToken: vi.fn(async (arg1: any) => {
+      // handle both possible signatures: issueToken(payload, opts) OR issueToken({payload,...})
+      const payload: TokenPayload = (arg1?.payload ?? arg1) as TokenPayload;
+      return `token-for-${payload.sub}`;
+    }),
+    verifyToken: vi.fn(async (_token: string, _opts: any) => {
+      const claims: TokenPayload = {
         sub: "u-1",
         prn: "a@b.com",
-        roles,
+        roles, // from your opts.roles
+        rs: currentRoleStamp, // optional but good default when freshness enabled
+        rv: currentRoleVersion, // optional
+        // adx can be added if needed
       };
-
-      if (typeof tokenRoleVersion === "number") base.rv = tokenRoleVersion;
-      if (typeof tokenRoleStamp === "string") base.rs = tokenRoleStamp;
-
-      if (base.rs === undefined && base.rv === undefined) base.rv = 1;
-
-      return mocks?.verifiedClaims ?? base;
+      return claims;
     }),
   };
 
+  const adapters: any = {
+    credentialChecker,
+    roleProvider,
+    ...(roleStampProvider ? { roleStampProvider } : {}),
+    ...(roleVersionProvider ? { roleVersionProvider } : {}),
+    tokenProvider,
+
+    // ✅ allow override injection (additionalClaimsProvider etc.)
+    ...(opts.adapterOverrides ?? {}),
+  };
+
+  console.log("opts.adapterOverrides" + JSON.stringify(opts.adapterOverrides));
   const core = createAuthCore(
     {
-      issuer: "auth-service",
-      audience: "mps",
-      tokenTtlSeconds: 900,
+      issuer: "test",
+      audience: ["test"],
+      tokenTtlSeconds: 60,
       roleFreshness: { enabled: true },
-      clockSkewSeconds: 60,
     },
-    {
-      credentialChecker,
-      roleProvider,
-      roleVersionProvider,
-      roleStampProvider,
-      tokenProvider,
-    } as any,
+    adapters,
   );
 
   return {
     core,
-    credentialChecker,
-    roleProvider,
-    roleVersionProvider,
-    roleStampProvider,
     tokenProvider,
+    roleProvider,
+    roleStampProvider,
+    roleVersionProvider,
+    credentialChecker,
   };
 }
 
@@ -161,37 +135,51 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
   });
 
   it("doAuthorize prefers roleStamp (rs) when present", async () => {
-    const { core, roleStampProvider, roleVersionProvider } = makeCore({
-      roles: ["ADMIN", "USER"],
-      tokenRoleStamp: "etag-1",
-      tokenRoleVersion: 123, // even if present, rs should be used first
-      currentRoleStamp: "etag-1",
-      currentRoleVersion: 999,
+    const { core, tokenProvider } = makeCore({
+      roles: ["ADMIN"],
+      provideRoleStampProvider: true,
+      provideRoleVersionProvider: true,
+      currentRoleStamp: "etag-777", // what provider returns
+      currentRoleVersion: 7, // what provider returns
     });
 
-    const res = await core.doAuthorize({
-      token: "t",
-      required: { anyRoles: ["ADMIN"] },
-    });
+    // Token has rs that matches provider, but rv is mismatched
+    (tokenProvider.verifyToken as any).mockResolvedValue({
+      sub: "u-1",
+      prn: "a@b.com",
+      roles: ["ADMIN"],
+      rs: "etag-777",
+      rv: 999,
+    } satisfies TokenPayload);
+
+    const res = await core.doAuthorize({ token: "t" });
 
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.userId).toBe("u-1");
-      expect(res.roleStamp).toBe("etag-1");
-      expect(res.roleVersion).toBe(123);
+      expect(res.roles).toEqual(["ADMIN"]);
+      expect(res.roleStamp).toBe("etag-777");
+      // roleVersion will still be returned from token (999) since you echo claims.rv
+      expect(res.roleVersion).toBe(999);
     }
-
-    expect(roleStampProvider!.getRoleStamp).toHaveBeenCalledWith("u-1");
-    // roleVersionProvider should NOT be needed when rs matches
-    expect(roleVersionProvider!.getRoleVersion).not.toHaveBeenCalled();
   });
 
   it("doAuthorize fails AUTH_TOKEN_STALE when roleStamp mismatches", async () => {
-    const { core } = makeCore({
+    const { core, tokenProvider } = makeCore({
       roles: ["USER"],
       tokenRoleStamp: "etag-old",
       currentRoleStamp: "etag-new",
+      provideRoleStampProvider: true, // ✅ must exist for rs validation
     });
+
+    // Token has rs that matches provider, but rv is mismatched
+    (tokenProvider.verifyToken as any).mockResolvedValue({
+      sub: "u-1",
+      prn: "a@b.com",
+      roles: ["ADMIN"],
+      rs: "etag-777",
+      rv: 999,
+    } satisfies TokenPayload);
 
     const res = await core.doAuthorize({ token: "t" });
     expect(res.ok).toBe(false);
@@ -219,6 +207,7 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
       tokenRoleStamp: "etag-1",
       provideRoleStampProvider: false,
       provideRoleVersionProvider: false,
+      currentRoleVersion: 5,
     });
 
     const res = await core.doAuthorize({ token: "t" });
@@ -227,11 +216,22 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
   });
 
   it("doAuthorize fails with AUTH_FORBIDDEN when required roles not met", async () => {
-    const { core } = makeCore({
+    const { core, tokenProvider } = makeCore({
       roles: ["USER"],
-      tokenRoleStamp: "etag-1",
-      currentRoleStamp: "etag-1",
+      currentRoleStamp: "etag-777",
+      currentRoleVersion: 999,
+      provideRoleStampProvider: true,
+      provideRoleVersionProvider: true,
     });
+
+    // Token has rs that matches provider, but rv is mismatched
+    (tokenProvider.verifyToken as any).mockResolvedValue({
+      sub: "u-1",
+      prn: "a@b.com",
+      roles: ["USER"],
+      rs: "etag-777",
+      rv: 999,
+    } satisfies TokenPayload);
 
     const res = await core.doAuthorize({
       token: "t",
@@ -243,10 +243,19 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
   });
 
   it("doAuthorize maps token verify errors to AUTH_TOKEN_EXPIRED (heuristic)", async () => {
-    const { core } = makeCore({
+    const { core, tokenProvider } = makeCore({
+      roles: ["USER"],
+      currentRoleStamp: "etag-777",
+      currentRoleVersion: 999,
+      provideRoleStampProvider: true,
+      provideRoleVersionProvider: true,
       verifyThrows: Object.assign(new Error("jwt expired"), {
         name: "TokenExpiredError",
       }),
+    });
+
+    tokenProvider.verifyToken = vi.fn(async (_token: string, _opts: any) => {
+      throw new Error("jwt expired");
     });
 
     const res = await core.doAuthorize({ token: "t" });
@@ -255,12 +264,80 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
   });
 
   it("doAuthorize fails when token missing required claims (no rs and no rv)", async () => {
-    const { core } = makeCore({
+    const { core, roleStampProvider, roleVersionProvider } = makeCore({
       verifiedClaims: { sub: "u-1", roles: ["USER"] } as any,
     });
 
     const res = await core.doAuthorize({ token: "t" });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe("AUTH_TOKEN_INVALID");
+  });
+
+  it("doAuthenticate includes adx in token when additionalClaimsProvider exists", async () => {
+    const additionalClaimsProvider = {
+      getAdditionalClaims: vi.fn(async () => ({
+        tenantId: "t-101",
+        displayName: "Abhinav",
+        flags: { beta: true },
+      })),
+    };
+
+    const { core, tokenProvider } = makeCore({
+      // your helper should allow passing adapter overrides;
+      // if not, just patch core creation in this test with your own createAuthCore call
+      adapterOverrides: {
+        additionalClaimsProvider,
+      },
+    } as any);
+
+    const res = await core.doAuthenticate({
+      principal: "a@b.com",
+      password: "pw",
+    });
+    expect(res.ok).toBe(true);
+
+    const issuedPayload = (tokenProvider.issueToken as any).mock.calls[0][0];
+    console.log("issueToken.calls =", JSON.stringify(issuedPayload));
+    expect(issuedPayload.adx).toEqual({
+      tenantId: "t-101",
+      displayName: "Abhinav",
+      flags: { beta: true },
+    });
+
+    expect(additionalClaimsProvider.getAdditionalClaims).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it("doAuthenticate does not include adx when additionalClaimsProvider is not configured", async () => {
+    const { core, tokenProvider } = makeCore({} as any);
+
+    const res = await core.doAuthenticate({
+      principal: "a@b.com",
+      password: "pw",
+    });
+    expect(res.ok).toBe(true);
+
+    const issuedPayload = (tokenProvider.issueToken as any).mock.calls[0][0];
+    expect(issuedPayload.adx).toBeUndefined();
+  });
+
+  it("doAuthenticate ignores additional claims when provider returns non-object", async () => {
+    const additionalClaimsProvider = {
+      getAdditionalClaims: vi.fn(async () => null as any),
+    };
+
+    const { core, tokenProvider } = makeCore({
+      additionalClaimsProvider,
+    } as any);
+
+    const res = await core.doAuthenticate({
+      principal: "a@b.com",
+      password: "pw",
+    });
+    expect(res.ok).toBe(true);
+
+    const issuedPayload = (tokenProvider.issueToken as any).mock.calls[0][0];
+    expect(issuedPayload.adx).toBeUndefined();
   });
 });

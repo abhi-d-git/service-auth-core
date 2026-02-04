@@ -212,6 +212,17 @@ getRoleVersion(userId: string): Promise<number>
 
 ---
 
+### AdditionalClaimsProvider
+
+Returns additional information that can we added to token. NOTE: Keep this info very small
+
+```ts
+getAdditionalClaims(userId: string;
+    principal: string;): Promise<AdditionalClaims>
+```
+
+---
+
 ### TokenProvider
 
 Abstracts JWT signing and verification.

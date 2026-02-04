@@ -43,13 +43,12 @@ const roleVersionProvider: RoleVersionProvider = {
 // Must match algorithm used by auth-service.
 // HS256 demo uses same secret. For RS256/EdDSA use public key only.
 
-/*
 const tokenProvider = new JwtTokenProvider({
   alg: "HS256",
   secret: "dev-secret-change-me",
   kid: "dev-k1",
 });
-*/
+
 /*
 // RS256 verifier example
 const tokenProvider = new JwtTokenProvider({
@@ -58,13 +57,14 @@ const tokenProvider = new JwtTokenProvider({
   kid: "rsa-k1"
 });
 */
-
+/*
 // EdDSA verifier example
 const tokenProvider = new JwtTokenProvider({
   alg: "EdDSA",
   publicKeyPem: process.env.AUTH_PUBLIC_KEY_PEM!,
   kid: "eddsa-k1",
 });
+*/
 
 const authz = createAuthCore(
   {

@@ -5,6 +5,7 @@ import type {
   RoleProvider,
   RoleVersionProvider,
   RoleStampProvider,
+  AdditionalClaimsProvider,
 } from "../../src/adapters/types.js";
 
 // -----------------------------
@@ -72,17 +73,25 @@ const roleStampProvider: RoleStampProvider = {
   },
 };
 
+const additionalClaimsProvider: AdditionalClaimsProvider = {
+  async getAdditionalClaims(userId) {
+    return {
+      tenantId: "some_tenant_id for user",
+    };
+  },
+};
+
 // -----------------------------
 // Token provider config
 // Pick ONE: HS256 (dev) or RS256/EdDSA (recommended for multi-service verification)
 // -----------------------------
-/*
+
 const tokenProvider = new JwtTokenProvider({
   alg: "HS256",
   secret: "dev-secret-change-me",
   kid: "dev-k1",
 });
-*/
+
 /*
 // RS256 issuer example
 const tokenProvider = new JwtTokenProvider({
@@ -92,7 +101,7 @@ const tokenProvider = new JwtTokenProvider({
   kid: "rsa-k1"
 });
 */
-
+/*
 // EdDSA issuer example
 const tokenProvider = new JwtTokenProvider({
   alg: "EdDSA",
@@ -100,7 +109,7 @@ const tokenProvider = new JwtTokenProvider({
   publicKeyPem: process.env.AUTH_PUBLIC_KEY_PEM!,
   kid: "eddsa-k1",
 });
-
+*/
 // -----------------------------
 // Create core + authenticate
 // -----------------------------
@@ -117,6 +126,7 @@ const auth = createAuthCore(
     roleVersionProvider,
     roleStampProvider,
     tokenProvider,
+    additionalClaimsProvider,
   } as any,
 );
 
@@ -138,6 +148,7 @@ async function main() {
   console.log("roleVersion:", login.roleVersion);
   console.log("expiresAt:", login.expiresAt);
   console.log("accessToken:", login.accessToken);
+  console.log("additional info:", login.adx);
 }
 
 main().catch((e) => {

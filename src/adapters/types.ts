@@ -25,3 +25,11 @@ export interface RoleStampProvider {
 export interface RoleVersionProvider {
   getRoleVersion(userId: string): Promise<number>;
 }
+
+export type AdditionalClaims = Record<string, unknown>;
+export interface AdditionalClaimsProvider {
+  getAdditionalClaims(input: {
+    userId: string;
+    principal: string;
+  }): Promise<AdditionalClaims>;
+}

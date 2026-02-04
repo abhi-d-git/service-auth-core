@@ -88,6 +88,10 @@ async function validateFreshness(
   const tokenRs = isNonEmptyString(claims.rs) ? claims.rs.trim() : undefined;
   const tokenRv = typeof claims.rv === "number" ? claims.rv : undefined;
 
+  console.log(`tokenRs: ${tokenRs}  and tokenRv : ${tokenRv}`);
+  console.log(
+    `adapters.roleStampProvider: ${adapters.roleStampProvider}  and adapters.roleVersionProvider : ${adapters.roleVersionProvider}`,
+  );
   // Prefer rs if present + provider exists
   if (tokenRs && adapters.roleStampProvider) {
     const currentRs = await adapters.roleStampProvider.getRoleStamp(userId);
@@ -181,6 +185,29 @@ export function createAuthCore(
       // Fetch roles first (needed for token)
       const roles = await adapters.roleProvider.getUserRoles(userId);
 
+      // Fetch additional information to get added in the claim
+      // src/framework.ts (inside doAuthenticate, after roles + rs/rv are known)
+
+      let adx: Record<string, unknown> | undefined;
+
+      if (adapters.additionalClaimsProvider) {
+        const extra =
+          await adapters.additionalClaimsProvider.getAdditionalClaims({
+            userId,
+            principal,
+          });
+        console.log(" payload extra: " + extra);
+        // Accept only plain objects; ignore null/arrays for safety
+        if (extra && typeof extra === "object" && !Array.isArray(extra)) {
+          // optionally drop empty object
+          if (Object.keys(extra).length > 0) adx = extra;
+        }
+      }
+      console.log(
+        " adapters.additionalClaimsProvider: " +
+          adapters.additionalClaimsProvider,
+      );
+
       // Fetch rs/rv if providers exist (both are optional; include what we can)
       const [roleStamp, roleVersion] = await Promise.all([
         adapters.roleStampProvider
@@ -195,6 +222,9 @@ export function createAuthCore(
 
       if (isNonEmptyString(roleStamp)) payload.rs = roleStamp;
       if (typeof roleVersion === "number") payload.rv = roleVersion;
+      if (adx && Object.keys(adx).length > 0) payload.adx = adx;
+      console.log(" payload adx: " + payload.adx);
+      console.log(" payload adx-adx: " + adx);
 
       // Note: JwtTokenProvider requires at least one of rs/rv.
       // If a service doesn't provide either, token issuance will fail (good safety default).
@@ -212,6 +242,7 @@ export function createAuthCore(
         roles,
         ...(payload.rs ? { roleStamp: payload.rs } : {}),
         ...(typeof payload.rv === "number" ? { roleVersion: payload.rv } : {}),
+        ...(adx ? { adx } : {}),
       };
     } catch (e) {
       return {
@@ -235,11 +266,13 @@ export function createAuthCore(
           audience: expectedAudience,
           clockSkewSeconds,
         });
+        console.log("claims : " + JSON.stringify(claims));
       } catch (e) {
         return { ok: false, error: mapTokenVerifyError(e) };
       }
 
       const missing = requiredMissing(claims);
+      console.log("missing : " + missing);
       if (missing.length > 0) {
         return {
           ok: false,
@@ -251,17 +284,20 @@ export function createAuthCore(
 
       const userId = claims.sub;
       const roles = claims.roles as string[];
+      const adx = claims.adx;
 
       // Freshness validation (rs preferred, rv fallback)
       if (roleFreshnessEnabled) {
         const freshness = await validateFreshness(userId, claims, adapters);
+        console.log("freshness : " + JSON.stringify(freshness));
         if (!freshness.ok) return { ok: false, error: freshness.error };
       }
 
       // Role policy checks
       const reqAny = input.required?.anyRoles ?? [];
       const reqAll = input.required?.allRoles ?? [];
-
+      console.log("reqAny : " + reqAny);
+      console.log("reqAll : " + reqAll);
       if (reqAll.length > 0 && !hasAllRoles(roles, reqAll)) {
         return {
           ok: false,
@@ -290,8 +326,10 @@ export function createAuthCore(
         ...(typeof claims.rv === "number" ? { roleVersion: claims.rv } : {}),
         principal: isNonEmptyString(claims.prn) ? claims.prn : undefined,
         claims,
+        ...adx,
       };
     } catch (e) {
+      console.log("Exception : " + e);
       return {
         ok: false,
         error: err("AUTH_INTERNAL_ERROR", "Internal error", {

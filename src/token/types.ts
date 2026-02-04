@@ -4,6 +4,7 @@ export type TokenPayload = {
   roles: string[];
   rs?: string; // roleStamp (preferred)
   rv?: number; // roleVersion (legacy/optional)
+  adx?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
