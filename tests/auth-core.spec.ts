@@ -70,7 +70,6 @@ export function makeCore(opts: TestCoreOptions = {}) {
     ...(opts.adapterOverrides ?? {}),
   };
 
-  console.log("opts.adapterOverrides" + JSON.stringify(opts.adapterOverrides));
   const core = createAuthCore(
     {
       issuer: "test",
@@ -297,7 +296,6 @@ describe("service-auth-core (roleStamp + roleVersion)", () => {
     expect(res.ok).toBe(true);
 
     const issuedPayload = (tokenProvider.issueToken as any).mock.calls[0][0];
-    console.log("issueToken.calls =", JSON.stringify(issuedPayload));
     expect(issuedPayload.adx).toEqual({
       tenantId: "t-101",
       displayName: "Abhinav",
