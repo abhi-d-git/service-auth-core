@@ -1,6 +1,6 @@
 {
   "name": "service-auth-core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Service-agnostic, pluggable auth core (authn + authz) with roleVersion freshness and token provider abstraction.",
   "keywords": [
     "auth",
